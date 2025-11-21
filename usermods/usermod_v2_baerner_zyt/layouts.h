@@ -50,7 +50,7 @@
     #define VOR_1         30,31,32
 
     #define HOUR_COLOR_1  1
-    #define ZERO_1        104,105,106,107,108,109
+    #define ZERO_1        104,105,106,107,108,109,-1
     #define EIS_1         44,45,46,      -1
     #define ZWOEI_1       47,48,49,50,   -1
     #define DRUE_1        52,53,54,      -1
@@ -102,7 +102,7 @@
     #define VOR_2         33,  34,  35
 
     #define HOUR_COLOR_2  1
-    #define ZERO_2        43,  54,  65,  76,  87,  98
+    #define ZERO_2        43,  54,  65,  76,  87,  98, -1
     #define EIS_2         44,  45,  46,  -1,  -1,  -1
     #define ZWOEI_2       47,  48,  49,  50,  -1,  -1
     #define DRUE_2        51,  52,  53,  -1,  -1,  -1
@@ -155,7 +155,7 @@
     #define VOR_3         29,30,31
 
     #define HOUR_COLOR_3  1
-    #define ZERO_3        32,40,48,56,64,72
+    #define ZERO_3        32,40,48,56,64,72,-1
     #define EIS_3         65,58,51,      -1
     #define ZWOEI_3       32,40,48,57,   -1
     #define DRUE_3        55,63,71,      -1
@@ -210,7 +210,7 @@
     #define FIFTY_FIVE_4  FUEF_4,VOR_4
 
     #define HOUR_COLOR_4  1
-    #define ZERO_4        132,133,134,135,136,137
+    #define ZERO_4        132,133,134,135,136,137,-1
     #define EIS_4         84,85,86,           -1
     #define ZWOEI_4       87,88,89,90,        -1
     #define DRUE_4        92,93,94,           -1
@@ -263,7 +263,7 @@
     #define VOR_5         30,31,32
 
     #define HOUR_COLOR_5  1
-    #define ZERO_5     40,41,42,43,44,45
+    #define ZERO_5        40,41,42,43,44,45,-1
     #define EIS_5         46,47,48,      -1
     #define ZWOEI_5       55,56,57,58,   -1
     #define DRUE_5        66,67,68,      -1
@@ -319,7 +319,7 @@
     #define VOR_6         30,31,32
 
     #define HOUR_COLOR_6  1
-    #define ZERO_6        99,100,101,102,103,104
+    #define ZERO_6        99,100,101,102,103,104,-1
     #define EIS_6         44,45,46,      -1
     #define ZWOEI_6       47,48,49,50,   -1
     #define DRUE_6        52,53,54,      -1
