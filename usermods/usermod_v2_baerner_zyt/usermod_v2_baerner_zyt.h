@@ -1,6 +1,7 @@
 #pragma once
 
 #include "wled.h"
+#include <BH1750.h>
 #include "layouts.h"
 #include "zyt-macros.h"
 
@@ -56,6 +57,68 @@ class BaernerZytUsermod : public Usermod {
     uint32_t minuteColor[MAX_LAYOUTS] = {MINUTE_COLOR};
     uint32_t minuteDotsColor = RGBW32(128,0,255,0);
     uint32_t itIsColor = 1;
+
+    // --- Auto-brightness (BH1750) ---
+    BH1750 lightMeter;
+    bool autoBrightnessEnabled = false;
+    int  autoBriMinPercent = 10;           // minimum brightness percentage (0-100)
+    int  autoBriMinLux = 5;               // lux reading considered "darkest" (maps to min brightness)
+    int  autoBriMaxLux = 500;             // lux reading considered "fully bright" (maps to max brightness)
+    bool sensorFound = false;
+    bool sensorInitDone = false;
+
+    float lastLux = -1.0f;
+    float smoothedLux = -1.0f;
+    byte  autoBriTarget = 128;
+    byte  autoBriCurrent = 128;
+    unsigned long lastSensorRead = 0;
+    unsigned long lastBriUpdate = 0;
+    unsigned long lastUiSync = 0;          // last time we synced UI via stateUpdated
+
+    static const unsigned long SENSOR_READ_INTERVAL = 1000;  // read sensor every 1s
+    static const unsigned long BRI_STEP_INTERVAL = 50;       // smooth step every 50ms
+    static const unsigned long UI_SYNC_INTERVAL = 2000;      // sync UI slider every 2s
+    static constexpr float EMA_ALPHA = 0.15f;                // EMA smoothing factor
+
+    // Map lux to brightness using sqrt curve for perceptual linearity
+    byte luxToBrightness(float lux) {
+      byte minBri = (byte)((autoBriMinPercent * 255) / 100);
+      if (minBri < 1) minBri = 1;
+
+      float fMinLux = (float)autoBriMinLux;
+      float fMaxLux = (float)autoBriMaxLux;
+      if (fMaxLux <= fMinLux) fMaxLux = fMinLux + 1.0f;
+
+      // Below min lux → min brightness
+      if (lux <= fMinLux) return minBri;
+      // Above max lux → max brightness
+      if (lux >= fMaxLux) return 255;
+
+      // Normalize lux into [0..1] range between min and max
+      float normalized = (lux - fMinLux) / (fMaxLux - fMinLux);
+      // Apply sqrt curve for perceptual linearity
+      normalized = sqrtf(normalized);
+
+      return minBri + (byte)(normalized * (255.0f - (float)minBri));
+    }
+
+    // Advance one step of smooth brightness interpolation
+    void stepBrightness() {
+      if (autoBriCurrent == autoBriTarget) return;
+
+      int diff = (int)autoBriTarget - (int)autoBriCurrent;
+      int absDiff = abs(diff);
+      int step;
+      if (absDiff > 50) step = 4;
+      else if (absDiff > 20) step = 2;
+      else step = 1;
+
+      if (diff > 0) {
+        autoBriCurrent = (byte)min((int)autoBriCurrent + step, (int)autoBriTarget);
+      } else {
+        autoBriCurrent = (byte)max((int)autoBriCurrent - step, (int)autoBriTarget);
+      }
+    }
 
     // update led mask
     void updateLedMask(const int wordMask[], int arraySize, int layoutCols, uint32_t color) {
@@ -232,8 +295,14 @@ class BaernerZytUsermod : public Usermod {
      * You can use it to initialize variables, sensors or similar.
      */
     void setup() {
-      //const uint16_t matrixCols = SEGMENT.virtualWidth();
-      //const uint16_t  matrixRows = SEGMENT.virtualHeight();
+      // Initialize BH1750 if I2C pins are configured
+      if (i2c_scl >= 0 && i2c_sda >= 0) {
+        sensorFound = lightMeter.begin(BH1750::CONTINUOUS_HIGH_RES_MODE);
+        DEBUG_PRINTLN(sensorFound ? F("BaernerZyt: BH1750 found") : F("BaernerZyt: BH1750 not found"));
+      }
+      sensorInitDone = true;
+      autoBriCurrent = bri;
+      autoBriTarget = bri;
     }
 
     /*
@@ -255,6 +324,48 @@ class BaernerZytUsermod : public Usermod {
      */
     void loop() {
       if (!usermodActive || strip.isUpdating()) return;
+
+      unsigned long now = millis();
+
+      // --- Auto-brightness: read sensor ---
+      if (autoBrightnessEnabled && sensorFound && (now - lastSensorRead >= SENSOR_READ_INTERVAL)) {
+        float lux = lightMeter.readLightLevel();
+        lastSensorRead = now;
+
+        if (lux >= 0) {
+          lastLux = lux;
+          if (smoothedLux < 0) {
+            smoothedLux = lux;       // first reading
+            autoBriCurrent = bri;    // sync with current brightness
+          } else {
+            smoothedLux = EMA_ALPHA * lux + (1.0f - EMA_ALPHA) * smoothedLux;
+          }
+          byte newTarget = luxToBrightness(smoothedLux);
+          if (abs((int)newTarget - (int)autoBriTarget) > 2) {
+            autoBriTarget = newTarget;
+          }
+        }
+      }
+
+      // --- Auto-brightness: step toward target ---
+      if (autoBrightnessEnabled && sensorFound && (now - lastBriUpdate >= BRI_STEP_INTERVAL)) {
+        lastBriUpdate = now;
+        byte prev = autoBriCurrent;
+        stepBrightness();
+        if (autoBriCurrent != prev) {
+          bri = autoBriCurrent;
+          briOld = bri;
+          briT = bri;
+          applyBri();
+          if (bri > 0) briLast = bri;
+
+          // Periodically notify UI so the brightness slider updates on the main page
+          if (now - lastUiSync >= UI_SYNC_INTERVAL) {
+            lastUiSync = now;
+            stateUpdated(CALL_MODE_NO_NOTIFY);
+          }
+        }
+      }
 
       //Test the Layout with fast changing numbers
       if (test) {
@@ -295,16 +406,26 @@ class BaernerZytUsermod : public Usermod {
     } //loop
 
 
-    /*
-     * addToJsonInfo() can be used to add custom entries to the /json/info part of the JSON API.
-     * Creating an "u" object allows you to add custom key/value pairs to the Info section of the WLED web UI.
-     * Below it is shown how this could be used for e.g. a light sensor
-     */
-    /*
-    void addToJsonInfo(JsonObject& root)
-    {
+    void addToJsonInfo(JsonObject& root) {
+      if (!sensorFound) return;
+
+      JsonObject user = root[F("u")];
+      if (user.isNull()) user = root.createNestedObject(F("u"));
+
+      JsonArray luxArr = user.createNestedArray(F("Helligkeit (Lux)"));
+      if (lastLux >= 0) {
+        luxArr.add(roundf(lastLux * 10.0f) / 10.0f);
+        luxArr.add(F(" lx"));
+      } else {
+        luxArr.add(F("warte..."));
+      }
+
+      if (autoBrightnessEnabled) {
+        JsonArray briArr = user.createNestedArray(F("Auto-Helligkeit"));
+        briArr.add(autoBriTarget);
+        briArr.add(F("/255"));
+      }
     }
-    */
 
     /*
      * addToJsonState() can be used to add custom entries to the /json/state part of the JSON API (state object).
@@ -366,6 +487,11 @@ class BaernerZytUsermod : public Usermod {
       top[F("Halbe Stunde nach Stunde")] =halfHourAfter;
       top[F("Layout")] = layout;
       top[F("Test")] = test;
+      // Auto-brightness
+      top[F("Auto-Helligkeit")] = autoBrightnessEnabled;
+      top[F("Min Helligkeit %")] = autoBriMinPercent;
+      top[F("Min Lux")] = autoBriMinLux;
+      top[F("Max Lux")] = autoBriMaxLux;
     }
 
     void appendConfigData() {
@@ -375,6 +501,10 @@ class BaernerZytUsermod : public Usermod {
       oappend(SET_F("addInfo('BaernerZyt:Halbe Stunde nach Stunde', 1, 'true=HH und halb; false=halb HH+1');")); 
       oappend(SET_F("addInfo('BaernerZyt:Layout', 1, '0=16x16 off, 1=Melissa(11x10), 2=Chlie(11x9), 3=chliner(8x10), 4=Martin(12x12), 5=Andre(10x10), 6=Thomas(11x11), 7/8=Analog(10x10), 9=Alicia(12x12)Spanish');"));
       oappend(SET_F("addInfo('BaernerZyt:Test', 1, 'alle 3sec eine neue Zeit');"));
+      oappend(SET_F("addInfo('BaernerZyt:Auto-Helligkeit', 1, 'BH1750 Sensor');"));
+      oappend(SET_F("addInfo('BaernerZyt:Min Helligkeit %', 1, '0-100, Standard: 10');"));
+      oappend(SET_F("addInfo('BaernerZyt:Min Lux', 1, 'Lux fuer min. Helligkeit (dunkelster Raum)');"));
+      oappend(SET_F("addInfo('BaernerZyt:Max Lux', 1, 'Lux fuer max. Helligkeit (hellster Raum)');"));
     }
 
     /*
@@ -409,6 +539,24 @@ class BaernerZytUsermod : public Usermod {
       configComplete &= getJsonValue(top[F("Halbe Stunde nach Stunde")], halfHourAfter);
       configComplete &= getJsonValue(top[F("Layout")], layout);
       configComplete &= getJsonValue(top[F("Test")], test);
+
+      // Auto-brightness
+      configComplete &= getJsonValue(top[F("Auto-Helligkeit")], autoBrightnessEnabled);
+      configComplete &= getJsonValue(top[F("Min Helligkeit %")], autoBriMinPercent);
+      configComplete &= getJsonValue(top[F("Min Lux")], autoBriMinLux);
+      configComplete &= getJsonValue(top[F("Max Lux")], autoBriMaxLux);
+
+      if (autoBriMinPercent < 0) autoBriMinPercent = 0;
+      if (autoBriMinPercent > 100) autoBriMinPercent = 100;
+      if (autoBriMinLux < 0) autoBriMinLux = 0;
+      if (autoBriMinLux > 65535) autoBriMinLux = 65535;
+      if (autoBriMaxLux < 1) autoBriMaxLux = 1;
+      if (autoBriMaxLux > 65535) autoBriMaxLux = 65535;
+
+      // Reset smoothing state when auto-brightness is toggled off
+      if (!autoBrightnessEnabled) {
+        smoothedLux = -1.0f;
+      }
 
       return configComplete;
     }
