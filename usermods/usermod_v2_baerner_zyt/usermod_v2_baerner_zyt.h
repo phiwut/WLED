@@ -344,6 +344,9 @@ class BaernerZytUsermod : public Usermod {
           if (abs((int)newTarget - (int)autoBriTarget) > 2) {
             autoBriTarget = newTarget;
           }
+          DEBUG_PRINTF("BaernerZyt: lux=%.1f lx smoothed=%.1f target_bri=%d current_bri=%d\n", lux, smoothedLux, (int)newTarget, (int)autoBriCurrent);
+        } else {
+          DEBUG_PRINTLN(F("BaernerZyt: BH1750 read error (lux < 0)"));
         }
       }
 
