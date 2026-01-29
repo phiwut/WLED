@@ -116,16 +116,47 @@ class GpsTimeUsermod : public Usermod {
       //        h
       
       if (millis() - targetTime > loopPeriod*1000) {
+        // #region agent log
+        { unsigned long m = millis(); Serial.print(F("{\"location\":\"gps_time:118\",\"message\":\"timer_enter\",\"data\":{\"millis\":"));
+          Serial.print(m); Serial.print(F(",\"targetTime\":"));
+          Serial.print(targetTime); Serial.print(F(",\"loopPeriod\":"));
+          Serial.print(loopPeriod); Serial.print(F(",\"elapsed\":"));
+          Serial.print(m - targetTime); Serial.print(F("},\"timestamp\":"));
+          Serial.print(m); Serial.print(F(",\"sessionId\":\"debug-session\",\"hypothesisId\":\"A\"}\n")); }
+        // #endregion
         if (!isFlushed) {
           Serial1.begin(9600,SERIAL_8N1,serial1RxPin,39);
           strcpy(state, "Serial restarted");
+          // #region agent log
+          Serial.print(F("{\"location\":\"gps_time:120\",\"message\":\"serial_restarted\",\"data\":{\"millis\":"));
+          Serial.print(millis()); Serial.print(F("},\"timestamp\":"));
+          Serial.print(millis()); Serial.print(F(",\"sessionId\":\"debug-session\",\"hypothesisId\":\"E\"}\n"));
+          // #endregion
           //pinMode(serial1RxPin, INPUT);
 
           //Serial1.flush();
           isFlushed = true;
         } else {
           if (Serial1.available()) {                // If anything comes in Serial-1
+            // #region agent log
+            { int av = Serial1.available(); unsigned long t0 = millis();
+              Serial.print(F("{\"location\":\"gps_time:127\",\"message\":\"before_read\",\"data\":{\"available\":"));
+              Serial.print(av); Serial.print(F(",\"millis\":"));
+              Serial.print(t0); Serial.print(F("},\"timestamp\":"));
+              Serial.print(t0); Serial.print(F(",\"sessionId\":\"debug-session\",\"hypothesisId\":\"B,C\"}\n")); }
+            // #endregion
             readString=Serial1.readStringUntil(13); // NMEA data ends with 'return' character, which is ascii(13)
+            // #region agent log
+            { unsigned long t1 = millis();
+              Serial.print(F("{\"location\":\"gps_time:131\",\"message\":\"after_read\",\"data\":{\"len\":"));
+              Serial.print(readString.length()); Serial.print(F(",\"millis\":"));
+              Serial.print(t1); Serial.print(F(",\"startsWithRMC\":"));
+              Serial.print((readString.startsWith("$GPRMC") || readString.startsWith("$GNRMC")) ? 1 : 0);
+              Serial.print(F(",\"first10\":\""));
+              for (size_t i = 0; i < (size_t)10 && i < readString.length(); i++) Serial.print(readString.charAt(i));
+              Serial.print(F("\"},\"timestamp\":"));
+              Serial.print(t1); Serial.print(F(",\"sessionId\":\"debug-session\",\"hypothesisId\":\"B,C\"}\n")); }
+            // #endregion
             readString.trim();                      // they say NMEA data starts with "$", but the Arduino doesn't think so.
             if (!gotGPS) {
               Serial.println(readString);           // All the raw sentences will be sent to monitor, if you want them, maybe to see the labels and data order.
@@ -214,6 +245,12 @@ class GpsTimeUsermod : public Usermod {
 
               // Serial.println(unixTime);
 
+              // #region agent log
+              Serial.print(F("{\"location\":\"gps_time:235\",\"message\":\"setTime\",\"data\":{\"unixTime\":"));
+              Serial.print(unixTime); Serial.print(F(",\"millis\":"));
+              Serial.print(millis()); Serial.print(F("},\"timestamp\":"));
+              Serial.print(millis()); Serial.print(F(",\"sessionId\":\"debug-session\",\"hypothesisId\":\"D\"}\n"));
+              // #endregion
               toki.setTime(unixTime);  //set Time in WLED
               char buf[2];
               strcpy(state, "GPS-Time ");
