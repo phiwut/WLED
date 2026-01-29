@@ -62,7 +62,8 @@ class BaernerZytUsermod : public Usermod {
     BH1750 lightMeter;
     bool autoBrightnessEnabled = false;
     int  autoBriMinPercent = 10;           // minimum brightness percentage (0-100)
-    int  autoBriMaxLux = 500;              // lux reading considered "fully bright"
+    int  autoBriMinLux = 5;               // lux reading considered "darkest" (maps to min brightness)
+    int  autoBriMaxLux = 500;             // lux reading considered "fully bright" (maps to max brightness)
     bool sensorFound = false;
     bool sensorInitDone = false;
 
@@ -72,9 +73,11 @@ class BaernerZytUsermod : public Usermod {
     byte  autoBriCurrent = 128;
     unsigned long lastSensorRead = 0;
     unsigned long lastBriUpdate = 0;
+    unsigned long lastUiSync = 0;          // last time we synced UI via stateUpdated
 
     static const unsigned long SENSOR_READ_INTERVAL = 1000;  // read sensor every 1s
     static const unsigned long BRI_STEP_INTERVAL = 50;       // smooth step every 50ms
+    static const unsigned long UI_SYNC_INTERVAL = 2000;      // sync UI slider every 2s
     static constexpr float EMA_ALPHA = 0.15f;                // EMA smoothing factor
 
     // Map lux to brightness using sqrt curve for perceptual linearity
@@ -82,13 +85,19 @@ class BaernerZytUsermod : public Usermod {
       byte minBri = (byte)((autoBriMinPercent * 255) / 100);
       if (minBri < 1) minBri = 1;
 
-      if (lux <= 0.0f) return minBri;
+      float fMinLux = (float)autoBriMinLux;
+      float fMaxLux = (float)autoBriMaxLux;
+      if (fMaxLux <= fMinLux) fMaxLux = fMinLux + 1.0f;
 
-      float maxLux = (float)autoBriMaxLux;
-      if (maxLux < 1.0f) maxLux = 1.0f;
+      // Below min lux → min brightness
+      if (lux <= fMinLux) return minBri;
+      // Above max lux → max brightness
+      if (lux >= fMaxLux) return 255;
 
-      float clampedLux = (lux > maxLux) ? maxLux : lux;
-      float normalized = sqrtf(clampedLux / maxLux);
+      // Normalize lux into [0..1] range between min and max
+      float normalized = (lux - fMinLux) / (fMaxLux - fMinLux);
+      // Apply sqrt curve for perceptual linearity
+      normalized = sqrtf(normalized);
 
       return minBri + (byte)(normalized * (255.0f - (float)minBri));
     }
@@ -349,6 +358,12 @@ class BaernerZytUsermod : public Usermod {
           briT = bri;
           applyBri();
           if (bri > 0) briLast = bri;
+
+          // Periodically notify UI so the brightness slider updates on the main page
+          if (now - lastUiSync >= UI_SYNC_INTERVAL) {
+            lastUiSync = now;
+            stateUpdated(CALL_MODE_NO_NOTIFY);
+          }
         }
       }
 
@@ -475,6 +490,7 @@ class BaernerZytUsermod : public Usermod {
       // Auto-brightness
       top[F("Auto-Helligkeit")] = autoBrightnessEnabled;
       top[F("Min Helligkeit %")] = autoBriMinPercent;
+      top[F("Min Lux")] = autoBriMinLux;
       top[F("Max Lux")] = autoBriMaxLux;
     }
 
@@ -487,7 +503,8 @@ class BaernerZytUsermod : public Usermod {
       oappend(SET_F("addInfo('BaernerZyt:Test', 1, 'alle 3sec eine neue Zeit');"));
       oappend(SET_F("addInfo('BaernerZyt:Auto-Helligkeit', 1, 'BH1750 Sensor');"));
       oappend(SET_F("addInfo('BaernerZyt:Min Helligkeit %', 1, '0-100, Standard: 10');"));
-      oappend(SET_F("addInfo('BaernerZyt:Max Lux', 1, 'Lux fuer max. Helligkeit');"));
+      oappend(SET_F("addInfo('BaernerZyt:Min Lux', 1, 'Lux fuer min. Helligkeit (dunkelster Raum)');"));
+      oappend(SET_F("addInfo('BaernerZyt:Max Lux', 1, 'Lux fuer max. Helligkeit (hellster Raum)');"));
     }
 
     /*
@@ -526,10 +543,13 @@ class BaernerZytUsermod : public Usermod {
       // Auto-brightness
       configComplete &= getJsonValue(top[F("Auto-Helligkeit")], autoBrightnessEnabled);
       configComplete &= getJsonValue(top[F("Min Helligkeit %")], autoBriMinPercent);
+      configComplete &= getJsonValue(top[F("Min Lux")], autoBriMinLux);
       configComplete &= getJsonValue(top[F("Max Lux")], autoBriMaxLux);
 
       if (autoBriMinPercent < 0) autoBriMinPercent = 0;
       if (autoBriMinPercent > 100) autoBriMinPercent = 100;
+      if (autoBriMinLux < 0) autoBriMinLux = 0;
+      if (autoBriMinLux > 65535) autoBriMinLux = 65535;
       if (autoBriMaxLux < 1) autoBriMaxLux = 1;
       if (autoBriMaxLux > 65535) autoBriMaxLux = 65535;
 
