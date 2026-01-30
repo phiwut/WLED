@@ -344,14 +344,18 @@ class BaernerZytUsermod : public Usermod {
           if (abs((int)newTarget - (int)autoBriTarget) > 2) {
             autoBriTarget = newTarget;
           }
-          DEBUG_PRINTF("BaernerZyt: lux=%.1f lx smoothed=%.1f target_bri=%d current_bri=%d\n", lux, smoothedLux, (int)newTarget, (int)autoBriCurrent);
+          static byte debugLogCounter = 0;
+          if (++debugLogCounter >= 5) {
+            debugLogCounter = 0;
+            DEBUG_PRINTF("BaernerZyt: lux=%.1f lx smoothed=%.1f target_bri=%d current_bri=%d\n", lux, smoothedLux, (int)newTarget, (int)autoBriCurrent);
+          }
         } else {
           DEBUG_PRINTLN(F("BaernerZyt: BH1750 read error (lux < 0)"));
         }
       }
 
       // --- Auto-brightness: step toward target ---
-      if (autoBrightnessEnabled && sensorFound && (now - lastBriUpdate >= BRI_STEP_INTERVAL)) {
+      if (autoBrightnessEnabled && sensorFound && !transitionActive && (now - lastBriUpdate >= BRI_STEP_INTERVAL)) {
         lastBriUpdate = now;
         byte prev = autoBriCurrent;
         stepBrightness();
@@ -365,7 +369,7 @@ class BaernerZytUsermod : public Usermod {
           // Periodically notify UI so the brightness slider updates on the main page
           if (now - lastUiSync >= UI_SYNC_INTERVAL) {
             lastUiSync = now;
-            stateUpdated(CALL_MODE_NO_NOTIFY);
+            interfaceUpdateCallMode = CALL_MODE_NO_NOTIFY;
           }
         }
       }
@@ -582,9 +586,11 @@ class BaernerZytUsermod : public Usermod {
       // check if usermod is active
       if (usermodActive == true) {
         // loop over all leds
-        for (int x = 0; x < matrixCols * matrixRows; x++) {
+        uint16_t totalLen = strip.getLengthTotal();
+        uint16_t maskLen = (uint16_t)min((int)(matrixCols * matrixRows), (int)maskSizeLeds);
+        for (uint16_t x = 0; x < totalLen; x++) {
           // check mask
-          if (maskLedsOn[x] == 0) {   // 0 means don't show his pixel
+          if (x >= maskLen || maskLedsOn[x] == 0) {   // 0 means don't show his pixel
             // set pixel off
             strip.setPixelColor(x, RGBW32(0,0,0,0));
           } else {
