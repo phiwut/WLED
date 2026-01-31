@@ -156,6 +156,7 @@
 #define USERMOD_ID_GPS_TIME              46     //Usermod "usermod_v2_gps_time.h"
 #define USERMOD_ID_AP_MODE_OFF           47     //Usermod "usermod_v2_ap-mode_off.h"
 #define USERMOD_ID_TOUCH_BUTTONS         48     //Usermod "usermod_v2_touch_buttons.h"
+#define USERMOD_ID_AUTO_BRIGHTNESS       49     //Usermod "usermod_v2_auto_brightness.h"
 
 
 //Access point behavior

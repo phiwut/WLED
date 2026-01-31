@@ -4,6 +4,7 @@
  *   (for v1 usermods using just usermod.cpp, you can ignore this file)
  */
 #define USERMOD_BAERNERZYT
+#define USERMOD_AUTO_BRIGHTNESS
 #define USERMOD_GPS_TIME
 #define USERMOD_AP_MODE_OFF
 #define USERMOD_TOUCH_BUTTONS
@@ -147,6 +148,10 @@
 
 #ifdef USERMOD_BAERNERZYT
   #include "../usermods/usermod_v2_baerner_zyt/usermod_v2_baerner_zyt.h"
+#endif
+
+#ifdef USERMOD_AUTO_BRIGHTNESS
+  #include "../usermods/usermod_v2_auto_brightness/usermod_v2_auto_brightness.h"
 #endif
 
 #ifdef USERMOD_MY9291
@@ -353,6 +358,10 @@ void registerUsermods()
   usermods.add(new BaernerZytUsermod());
   #endif
 
+  #ifdef USERMOD_AUTO_BRIGHTNESS
+  usermods.add(new AutoBrightnessUsermod());
+  #endif
+
   #ifdef USERMOD_MY9291
   usermods.add(new MY9291Usermod());
   #endif
@@ -425,4 +434,3 @@ void registerUsermods()
   usermods.add(new TouchButtonsUsermod());
   #endif
 }
-
